@@ -88,6 +88,46 @@
             <TresPlaneGeometry :args="[getTextWidth(object.text || ''), 1]" />
             <TresMeshBasicMaterial :map="createTextTexture(object.text || '', object.color || '#ffffff')" />
           </TresMesh>
+
+          <!-- 3D Equation (using text rendering for now) -->
+          <TresMesh
+            v-if="object.type === 'equation'"
+            :position="object.position || [0, 2, 0]"
+            :key="`eqn-${object.latex || object.text}-${index}`"
+          >
+            <TresPlaneGeometry :args="[getTextWidth(object.latex || object.text || ''), 1.5]" />
+            <TresMeshBasicMaterial :map="createTextTexture(object.latex || object.text || '', object.color || '#00ff00')" />
+          </TresMesh>
+
+          <!-- Sphere (for physics demonstrations) -->
+          <TresMesh
+            v-if="object.type === 'sphere'"
+            :position="object.position || [0, 1, 0]"
+            :key="`sphere-${index}`"
+            cast-shadow
+          >
+            <TresSphereGeometry :args="[object.radius || 0.5, 32, 32]" />
+            <TresMeshStandardMaterial 
+              :color="object.color || '#4a90e2'"
+              :roughness="0.3"
+              :metalness="0.7"
+            />
+          </TresMesh>
+
+          <!-- Box (for physics demonstrations) -->
+          <TresMesh
+            v-if="object.type === 'box'"
+            :position="object.position || [0, 0.5, 0]"
+            :key="`box-${index}`"
+            cast-shadow
+          >
+            <TresBoxGeometry :args="[object.width || 1, object.height || 1, object.depth || 1]" />
+            <TresMeshStandardMaterial 
+              :color="object.color || '#e74c3c'"
+              :roughness="0.4"
+              :metalness="0.6"
+            />
+          </TresMesh>
         </template>
       </TresGroup>
 
@@ -146,7 +186,7 @@
         v-if="onRecord"
         icon="i-lucide-video"
         size="sm"
-        color="red"
+        color="error"
         @click="onRecord"
       >
         Record
@@ -158,7 +198,13 @@
 <script setup lang="ts">
 import { TresCanvas } from '@tresjs/core';
 import { OrbitControls } from '@tresjs/cientos';
+// Import CanvasTexture - Vite deduplication ensures same instance as TresJS
+// Note: Three.js may show "multiple instances" warning - this is a known TresJS/Cientos issue
+// See: https://github.com/Tresjs/tres/issues/1167
+// The warning is harmless - Vite deduplication ensures only one instance is bundled
 import { CanvasTexture } from 'three';
+import gsap from 'gsap';
+import { nextTick } from 'vue';
 import type { Scene, VisualEvent } from '~/schemas/videoSpec';
 
 // MCP Usage: Using TresJS components from vue3 ecosystem for 3D rendering
@@ -185,7 +231,7 @@ const canvasConfig = {
   shadows: true,
   alpha: true,
   antialias: true,
-  powerPreference: 'high-performance'
+  powerPreference: 'high-performance' as WebGLPowerPreference
 };
 
 // Container ref for size tracking
@@ -305,31 +351,72 @@ const updateSceneAtTime = (time: number) => {
   });
 };
 
+// GSAP animation instances (for cleanup)
+const gsapAnimations = new Map<string, gsap.core.Tween>();
+
 // Apply specific animation based on event type
 const applyEventAnimation = (event: VisualEvent, progress: number) => {
-  // Animate puck movement
+  // Animate puck movement with GSAP easing
   if (event.action === 'animate_puck_3d') {
     const path = event.params?.path;
     const startX = event.params?.startX as number || 0;
     const endX = event.params?.endX as number || 10;
+    const startY = event.params?.startY as number || 0.1;
+    const endY = event.params?.endY as number || 0.1;
+    const startZ = event.params?.startZ as number || 0;
+    const endZ = event.params?.endZ as number || 0;
     
     if (path === 'straight_line') {
-      // Smoothly interpolate puck position along X axis
-      const currentX = startX + (endX - startX) * progress;
-      animatedPuckPosition.value = [currentX, 0.1, 0];
+      // Use GSAP easing for smooth animation
+      const easeProgress = gsap.utils.mapRange(0, 1, 0, 1)(progress);
+      const easedProgress = gsap.parseEase('power2.out')(easeProgress);
+      const currentX = startX + (endX - startX) * easedProgress;
+      const currentY = startY + (endY - startY) * easedProgress;
+      const currentZ = startZ + (endZ - startZ) * easedProgress;
+      animatedPuckPosition.value = [currentX, currentY, currentZ];
     } else {
-      // Default: move from center to right
-      animatedPuckPosition.value = [progress * 10, 0.1, 0];
+      // Default: move from center to right with easing
+      const easedProgress = gsap.parseEase('power2.out')(progress);
+      animatedPuckPosition.value = [easedProgress * 10, 0.1, 0];
     }
   }
   
-  // Animate vector appearance
+  // Animate vector appearance with fade-in
   if (event.action === 'animate_vector_3d') {
     // Vectors appear instantly, but we could add fade-in here
     // For now, they're always visible when event is active
   }
   
-  // More animations will be added here
+  // Animate sphere movement
+  if (event.action === 'animate_sphere_3d') {
+    // Find the sphere object and animate it
+    const sphereObj = sceneObjects.value.find(obj => obj.type === 'sphere');
+    if (sphereObj) {
+      const startPos = event.params?.startPosition as [number, number, number] || [0, 1, 0];
+      const endPos = event.params?.endPosition as [number, number, number] || [5, 1, 0];
+      const easedProgress = gsap.parseEase('power2.inOut')(progress);
+      sphereObj.position = [
+        startPos[0] + (endPos[0] - startPos[0]) * easedProgress,
+        startPos[1] + (endPos[1] - startPos[1]) * easedProgress,
+        startPos[2] + (endPos[2] - startPos[2]) * easedProgress
+      ];
+    }
+  }
+  
+  // Animate box movement
+  if (event.action === 'animate_box_3d') {
+    const boxObj = sceneObjects.value.find(obj => obj.type === 'box');
+    if (boxObj) {
+      const startPos = event.params?.startPosition as [number, number, number] || [0, 0.5, 0];
+      const endPos = event.params?.endPosition as [number, number, number] || [5, 0.5, 0];
+      const easedProgress = gsap.parseEase('power2.inOut')(progress);
+      boxObj.position = [
+        startPos[0] + (endPos[0] - startPos[0]) * easedProgress,
+        startPos[1] + (endPos[1] - startPos[1]) * easedProgress,
+        startPos[2] + (endPos[2] - startPos[2]) * easedProgress
+      ];
+    }
+  }
 };
 
 // Watch currentTime to update scene when scrubbing (even when not playing)
@@ -355,13 +442,18 @@ watch(() => props.scene, (newScene) => {
 
 // Scene objects (will be populated from visual events)
 const sceneObjects = ref<Array<{
-  type: 'puck' | 'vector' | 'text' | 'equation';
+  type: 'puck' | 'vector' | 'text' | 'equation' | 'sphere' | 'box' | 'arrow';
   position: [number, number, number];
   direction?: [number, number, number];
   length?: number;
   color?: string;
   text?: string;
   size?: number;
+  radius?: number;
+  width?: number;
+  height?: number;
+  depth?: number;
+  latex?: string;
 }>>([]);
 
 // Separate puck state to prevent duplicates
@@ -418,8 +510,10 @@ watch(() => props.scene?.type, (newType, oldType) => {
   props.scene.events?.forEach((event, eventIndex) => {
     // Show vectors that appear early in the scene (t <= 2s)
     if (event.action === 'animate_vector_3d' && event.t <= 2) {
-      const dir = Array.isArray(event.params?.direction) 
-        ? (event.params.direction as [number, number, number])
+      const dirArray = event.params?.direction;
+      // Ensure it's a tuple of exactly 3 numbers
+      const dir: [number, number, number] = Array.isArray(dirArray) && dirArray.length >= 3
+        ? [dirArray[0] ?? 1, dirArray[1] ?? 0, dirArray[2] ?? 0]
         : [1, 0, 0];
       objects.push({
         type: 'vector',
@@ -440,13 +534,50 @@ watch(() => props.scene?.type, (newType, oldType) => {
         size: 0.5
       });
     }
+    
+    // Show equations that appear early
+    if (event.action === 'draw_eqn_3d' && (event.latex || event.text) && event.t <= 2) {
+      objects.push({
+        type: 'equation',
+        position: event.position as [number, number, number] || [0, 2, 0],
+        latex: event.latex,
+        text: event.text,
+        color: event.color || '#00ff00',
+        size: 0.8
+      });
+    }
+    
+    // Show spheres for physics demos
+    if (event.action === 'create_sphere_3d' && event.t <= 2) {
+      objects.push({
+        type: 'sphere',
+        position: event.position as [number, number, number] || [0, 1, 0],
+        radius: (event.params?.radius as number) || 0.5,
+        color: event.color || '#4a90e2'
+      });
+    }
+    
+    // Show boxes for physics demos
+    if (event.action === 'create_box_3d' && event.t <= 2) {
+      objects.push({
+        type: 'box',
+        position: event.position as [number, number, number] || [0, 0.5, 0],
+        width: (event.params?.width as number) || 1,
+        height: (event.params?.height as number) || 1,
+        depth: (event.params?.depth as number) || 1,
+        color: event.color || '#e74c3c'
+      });
+    }
   });
   
   // Debug logging (only log warnings, not every creation)
   if (import.meta.dev) {
     const vectorCount = objects.filter(obj => obj.type === 'vector').length;
     const textCount = objects.filter(obj => obj.type === 'text').length;
-    console.log(`[Scene3DViewer] Rebuilt: puck=${hasPuck.value}, vectors=${vectorCount}, text=${textCount}`);
+    const equationCount = objects.filter(obj => obj.type === 'equation').length;
+    const sphereCount = objects.filter(obj => obj.type === 'sphere').length;
+    const boxCount = objects.filter(obj => obj.type === 'box').length;
+    console.log(`[Scene3DViewer] Rebuilt: puck=${hasPuck.value}, vectors=${vectorCount}, text=${textCount}, equations=${equationCount}, spheres=${sphereCount}, boxes=${boxCount}`);
   }
   
   // Replace the entire array to ensure no duplicates
@@ -517,14 +648,37 @@ const formatTime = (seconds: number): string => {
 
 // Reset camera to initial position
 const resetCamera = () => {
-  if (cameraRef.value) {
-    cameraRef.value.position.set(0, 5, 10);
-    cameraRef.value.lookAt(0, 0, 0);
-  }
-  if (orbitControlsRef.value) {
-    orbitControlsRef.value.target.set(0, 0, 0);
-    orbitControlsRef.value.update();
-  }
+  // Use nextTick to ensure refs are fully initialized
+  nextTick(() => {
+    try {
+      // Reset camera position if available
+      if (cameraRef.value) {
+        // TresJS camera ref might expose the Three.js camera directly or via a property
+        const camera = cameraRef.value.camera || cameraRef.value;
+        if (camera && camera.position) {
+          camera.position.set(0, 5, 10);
+          if (typeof camera.lookAt === 'function') {
+            camera.lookAt(0, 0, 0);
+          }
+        }
+      }
+      
+      // Reset orbit controls target if available
+      if (orbitControlsRef.value) {
+        // OrbitControls ref might expose the controls directly or via a property
+        const controls = orbitControlsRef.value.controls || orbitControlsRef.value;
+        if (controls && controls.target) {
+          controls.target.set(0, 0, 0);
+          if (typeof controls.update === 'function') {
+            controls.update();
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('[Scene3DViewer] Error resetting camera:', error);
+      // Silently fail - camera reset is not critical
+    }
+  });
 };
 
 // Helper function to create text texture

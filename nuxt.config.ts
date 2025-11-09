@@ -25,6 +25,18 @@ export default defineNuxtConfig({
       colors: ['primary', 'secondary', 'success', 'info', 'warning', 'error'],
       transitions: true
     }
+  },
+  
+  // Vite configuration to deduplicate Three.js instances
+  // This ensures TresJS and direct Three.js imports use the same instance
+  // Prevents "Multiple instances of Three.js" warning and reduces bundle size
+  vite: {
+    resolve: {
+      dedupe: ['three']
+    },
+    optimizeDeps: {
+      include: ['three']
+    }
   }
 })
 

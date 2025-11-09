@@ -1,0 +1,17 @@
+{
+  "scenes": [
+    {
+      "id": "scene_0",
+      "type": "intro",
+      "start": 0,
+      "end": 5
+    },
+    {
+      "id": "scene_1",
+      "type": "skill1",
+      "start": 5,
+      "end": 10
+    }
+  ],
+  "duration": 10
+}

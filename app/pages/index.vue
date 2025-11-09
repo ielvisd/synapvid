@@ -22,63 +22,63 @@
       </div>
 
       <!-- Prompt Form -->
-      <UForm 
-        :schema="PromptInputSchema" 
-        :state="formState" 
-        class="space-y-6"
-        @submit="onSubmit"
-      >
-        <!-- Main Prompt -->
-        <UFormField 
-          label="Video Prompt" 
-          name="prompt" 
-          required
-          help="Describe the physics concept you want to explain (e.g., 'Explain Newton's First Law with a rocket example')"
+      <ClientOnly>
+        <UForm 
+          :schema="PromptInputSchema" 
+          :state="formState" 
+          class="space-y-6"
+          @submit="onSubmit"
         >
-          <UTextarea
-            v-model="formState.prompt"
-            placeholder="e.g., Explain Newton's First Law with a rocket example"
-            :rows="4"
-            autoresize
-          />
-        </UFormField>
-
-        <!-- Learning Objectives -->
-        <UFormField
-          label="Learning Objectives (Optional)"
-          name="learningObjectives"
-          help="Add specific learning goals, one per line"
-        >
-          <UTextarea
-            v-model="learningObjectivesText"
-            placeholder="e.g., Understand the concept of inertia&#10;Relate Newton's First Law to real-world examples"
-            :rows="3"
-          />
-        </UFormField>
-
-        <!-- Examples -->
-        <UFormField
-          label="Real-World Examples (Optional)"
-          name="examples"
-          help="Add specific examples to include, one per line"
-        >
-          <UTextarea
-            v-model="examplesText"
-            placeholder="e.g., Hockey puck sliding on ice&#10;Rocket in space"
-            :rows="3"
-          />
-        </UFormField>
-
-        <!-- Submit Button -->
-        <div class="flex gap-3">
-          <UButton 
-            type="submit" 
-            :loading="promptExpansion.isLoading.value"
-            :disabled="promptExpansion.isLoading.value"
+          <!-- Main Prompt -->
+          <UFormField 
+            label="Video Prompt" 
+            name="prompt" 
+            required
+            help="Describe the physics concept you want to explain (e.g., 'Explain Newton's First Law with a rocket example')"
           >
-            Generate Video Spec
-          </UButton>
-          <ClientOnly>
+            <UTextarea
+              v-model="formState.prompt"
+              placeholder="e.g., Explain Newton's First Law with a rocket example"
+              :rows="4"
+              autoresize
+            />
+          </UFormField>
+
+          <!-- Learning Objectives -->
+          <UFormField
+            label="Learning Objectives (Optional)"
+            name="learningObjectives"
+            help="Add specific learning goals, one per line"
+          >
+            <UTextarea
+              v-model="learningObjectivesText"
+              placeholder="e.g., Understand the concept of inertia&#10;Relate Newton's First Law to real-world examples"
+              :rows="3"
+            />
+          </UFormField>
+
+          <!-- Examples -->
+          <UFormField
+            label="Real-World Examples (Optional)"
+            name="examples"
+            help="Add specific examples to include, one per line"
+          >
+            <UTextarea
+              v-model="examplesText"
+              placeholder="e.g., Hockey puck sliding on ice&#10;Rocket in space"
+              :rows="3"
+            />
+          </UFormField>
+
+          <!-- Submit Button -->
+          <div class="flex gap-3">
+            <UButton 
+              type="submit" 
+              :loading="promptExpansion.isLoading.value"
+              :disabled="promptExpansion.isLoading.value"
+            >
+              Generate Video Spec
+            </UButton>
             <UButton 
               v-if="generatedSpec"
               variant="outline"
@@ -86,9 +86,9 @@
             >
               Edit in Editor
             </UButton>
-          </ClientOnly>
-        </div>
-      </UForm>
+          </div>
+        </UForm>
+      </ClientOnly>
 
       <!-- Generated Spec Display -->
       <ClientOnly>

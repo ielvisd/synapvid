@@ -11,20 +11,52 @@ const execAsync = promisify(exec);
  */
 export async function getAudioDuration(filepath: string): Promise<number> {
   try {
-    const { stdout } = await execAsync(
-      `"${ffprobeInstaller.path}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filepath}"`
-    );
+    // Verify ffprobe path exists
+    if (!ffprobeInstaller.path) {
+      throw new Error('ffprobe path not found. Please ensure @ffprobe-installer/ffprobe is properly installed.');
+    }
+
+    const command = `"${ffprobeInstaller.path}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filepath}"`;
+    const { stdout, stderr } = await execAsync(command);
     
-    const duration = parseFloat(stdout.trim());
+    if (stderr && stderr.trim()) {
+      console.warn('ffprobe stderr:', stderr);
+    }
+    
+    const durationStr = stdout.trim();
+    if (!durationStr) {
+      throw new Error(`ffprobe returned empty output for file: ${filepath}`);
+    }
+    
+    const duration = parseFloat(durationStr);
     
     if (isNaN(duration)) {
-      throw new Error('Invalid duration returned from ffprobe');
+      throw new Error(`Invalid duration returned from ffprobe: "${durationStr}"`);
+    }
+    
+    if (duration <= 0) {
+      throw new Error(`Invalid duration (must be > 0): ${duration}`);
     }
     
     return duration;
   } catch (error: any) {
-    console.error('ffprobe error:', error);
-    throw new Error(`Failed to get audio duration: ${error.message}`);
+    console.error('ffprobe error:', {
+      filepath,
+      ffprobePath: ffprobeInstaller.path,
+      error: error.message,
+      stderr: error.stderr,
+      stdout: error.stdout
+    });
+    
+    // Provide more specific error messages
+    if (error.code === 'ENOENT') {
+      throw new Error(`ffprobe executable not found at: ${ffprobeInstaller.path}`);
+    }
+    if (error.code === 'EACCES') {
+      throw new Error(`Permission denied accessing ffprobe or audio file: ${filepath}`);
+    }
+    
+    throw new Error(`Failed to get audio duration: ${error.message || 'Unknown error'}`);
   }
 }
 
