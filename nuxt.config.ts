@@ -19,6 +19,9 @@ export default defineNuxtConfig({
     typeCheck: false // Temporarily disabled to avoid vite-plugin-checker issues
   },
   
+  // SSR configuration to prevent useHead recursion issues
+  ssr: true,
+  
   // Nuxt UI configuration
   ui: {
     theme: {
