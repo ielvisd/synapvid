@@ -185,6 +185,75 @@ test('fast test', async ({ page }) => {
 
 See [TEST_FLOW.md](./TEST_FLOW.md) for comprehensive manual test flows.
 
+## CI/CD
+
+SynapVid uses GitHub Actions for continuous integration and deployment.
+
+### Workflows
+
+#### Main CI Pipeline (`.github/workflows/ci.yml`)
+
+Runs on every push and pull request to `main`, `master`, or `develop` branches:
+
+1. **Lint & Type Check** - Validates TypeScript types and code quality
+2. **Unit Tests** - Runs Vitest unit tests for composables and schemas
+3. **E2E Tests** - Runs Playwright end-to-end tests
+4. **Build** - Verifies production build succeeds
+
+#### PR Checks (`.github/workflows/pr-checks.yml`)
+
+Provides PR summary and test coverage information for pull requests.
+
+#### Release (`.github/workflows/release.yml`)
+
+Automatically creates GitHub releases when tags are pushed (e.g., `v1.0.0`).
+
+### Running CI Locally
+
+You can simulate CI locally:
+
+```bash
+# Run type checking
+pnpm typecheck
+
+# Run unit tests
+pnpm test:unit
+
+# Run E2E tests
+pnpm test:e2e
+
+# Build for production
+pnpm build
+```
+
+### CI Environment Variables
+
+For E2E tests that require API access, set `OPENAI_API_KEY` as a GitHub secret:
+
+1. Go to repository Settings → Secrets and variables → Actions
+2. Add `OPENAI_API_KEY` secret
+3. The CI workflow will use it automatically
+
+**Note**: Most E2E tests use mocked APIs and don't require real API keys.
+
+### Test Artifacts
+
+CI automatically uploads:
+- **Unit test results** - Coverage reports and test output
+- **E2E test reports** - Playwright HTML reports
+- **Test artifacts** - Screenshots, videos, and traces from failed tests
+- **Build artifacts** - Production build output
+
+Artifacts are retained for 7 days and can be downloaded from the GitHub Actions UI.
+
+### Dependabot
+
+Automated dependency updates are configured via `.github/dependabot.yml`:
+- **npm packages**: Weekly updates
+- **GitHub Actions**: Weekly updates
+
+Pull requests are automatically created with labels for easy review.
+
 ## Usage
 
 ### 1. Generate Video Specification (Home Page)
@@ -312,11 +381,23 @@ npm run preview
 # Run type checking
 npm run typecheck
 
-# Run tests
-npm test
+# Run all tests
+pnpm test
+
+# Run unit tests only
+pnpm test:unit
+
+# Run E2E tests only
+pnpm test:e2e
 
 # Run tests with UI
-npm test:ui
+pnpm test:ui
+
+# Run E2E tests with UI
+pnpm test:e2e:ui
+
+# Type check
+pnpm typecheck
 ```
 
 ### Adding New Visual Actions
