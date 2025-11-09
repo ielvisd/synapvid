@@ -63,11 +63,13 @@
           <!-- TresJS 3D Canvas -->
           <Scene3DViewer
             v-if="hasScenes && currentScene"
+            ref="sceneViewerRef"
             :scene="currentScene"
             :style="projectState.videoSpec.value?.style"
             :show-controls="false"
             :enable-controls="true"
             :auto-play="isPlaying"
+            :current-time="currentTime"
           />
 
           <!-- Canvas Overlay Controls -->
@@ -106,17 +108,18 @@
             :icon="isPlaying ? 'i-lucide-pause' : 'i-lucide-play'"
             @click="togglePlay"
           />
-          <div class="flex-1">
-            <input
-              v-model.number="currentTime"
-              type="range"
-              min="0"
-              :max="duration"
-              step="0.1"
-              class="w-full"
-              @input="seekTo"
-            />
-          </div>
+                  <div class="flex-1">
+                    <input
+                      v-model.number="currentTime"
+                      type="range"
+                      min="0"
+                      :max="duration"
+                      step="0.1"
+                      class="w-full"
+                      @input="seekTo"
+                      @mousedown="pauseOnSeek"
+                    />
+                  </div>
           <span class="text-sm tabular-nums">
             {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
           </span>
@@ -228,6 +231,9 @@ definePageMeta({
 const projectState = useProjectState();
 const toast = useToast();
 
+// Scene viewer ref for camera control
+const sceneViewerRef = ref();
+
 // State
 const showSettings = ref(false);
 const quality = ref('medium');
@@ -235,6 +241,9 @@ const cameraAngle = ref('perspective');
 const showGrid = ref(true);
 const isPlaying = ref(false);
 const currentTime = ref(0);
+
+// Animation loop for playback
+let playbackAnimationFrame: number | null = null;
 
 // Get scenes from project state
 const scenes = computed(() => projectState.videoSpec.value?.scenes || []);
@@ -269,24 +278,76 @@ const currentScene = computed(() => {
   );
 });
 
+// Animation loop function
+function animatePlayback() {
+  if (!isPlaying.value) return;
+  
+  // Update current time
+  currentTime.value += 0.016; // ~60fps
+  
+  // Check if we've reached the end
+  if (currentTime.value >= duration.value) {
+    // Option 1: Stop at end (current behavior)
+    currentTime.value = duration.value;
+    isPlaying.value = false;
+    if (playbackAnimationFrame) {
+      cancelAnimationFrame(playbackAnimationFrame);
+      playbackAnimationFrame = null;
+    }
+    return;
+    
+    // Option 2: Loop back to beginning (uncomment to enable)
+    // currentTime.value = 0;
+    // Continue animation
+    // playbackAnimationFrame = requestAnimationFrame(animatePlayback);
+    // return;
+  }
+  
+  // Continue animation
+  playbackAnimationFrame = requestAnimationFrame(animatePlayback);
+}
+
 // Playback control functions
 function togglePlay() {
   isPlaying.value = !isPlaying.value;
   if (isPlaying.value) {
-    // In real implementation, start animation loop
     console.log('Starting playback...');
+    // Start animation loop
+    playbackAnimationFrame = requestAnimationFrame(animatePlayback);
   } else {
     console.log('Pausing playback...');
+    // Stop animation loop
+    if (playbackAnimationFrame) {
+      cancelAnimationFrame(playbackAnimationFrame);
+      playbackAnimationFrame = null;
+    }
   }
 }
 
 function playPreview() {
   currentTime.value = 0;
   isPlaying.value = true;
+  // Start animation loop
+  if (playbackAnimationFrame) {
+    cancelAnimationFrame(playbackAnimationFrame);
+  }
+  playbackAnimationFrame = requestAnimationFrame(animatePlayback);
+}
+
+function pauseOnSeek() {
+  // Pause playback when user starts scrubbing
+  if (isPlaying.value) {
+    isPlaying.value = false;
+    if (playbackAnimationFrame) {
+      cancelAnimationFrame(playbackAnimationFrame);
+      playbackAnimationFrame = null;
+    }
+  }
 }
 
 function seekTo() {
   // Seek to current time in animation
+  // The Scene3DViewer will automatically update via :current-time prop
   console.log('Seeking to:', currentTime.value);
 }
 
@@ -309,7 +370,10 @@ function nextScene() {
 }
 
 function resetCamera() {
-  console.log('Resetting camera position');
+  // Call resetCamera method on Scene3DViewer component
+  if (sceneViewerRef.value?.resetCamera) {
+    sceneViewerRef.value.resetCamera();
+  }
 }
 
 function fullscreen() {
@@ -330,6 +394,10 @@ function formatTime(seconds: number): string {
 // Cleanup on unmount
 onUnmounted(() => {
   isPlaying.value = false;
+  if (playbackAnimationFrame) {
+    cancelAnimationFrame(playbackAnimationFrame);
+    playbackAnimationFrame = null;
+  }
 });
 </script>
 
