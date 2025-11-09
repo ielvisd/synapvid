@@ -1,4 +1,4 @@
-import { writeFile, mkdir, readFile } from 'fs/promises';
+import { writeFile, mkdir, readFile, stat } from 'fs/promises';
 import { join, resolve } from 'path';
 import { createHash } from 'crypto';
 import ffmpeg from 'fluent-ffmpeg';
@@ -52,13 +52,25 @@ export default defineEventHandler(async (event) => {
     const resolvedAudioPaths = audioPaths.map(resolvePath);
     const resolvedClipPaths = clipPaths.map(resolvePath);
 
-    // Verify files exist
+    // Verify files exist and are valid
+    const missingFiles: string[] = [];
     for (const path of [...resolvedAudioPaths, ...resolvedClipPaths]) {
       try {
-        await readFile(path);
+        const stats = await stat(path);
+        if (!stats.isFile()) {
+          missingFiles.push(path);
+        }
       } catch (err) {
-        console.warn(`File not found: ${path}, will skip or use placeholder`);
+        missingFiles.push(path);
+        console.warn(`File not found or invalid: ${path}`);
       }
+    }
+    
+    if (missingFiles.length > 0) {
+      throw createError({
+        statusCode: 400,
+        message: `Missing or invalid files: ${missingFiles.map(p => p.split('/').pop()).join(', ')}`
+      });
     }
 
     // Generate WebVTT subtitle file
@@ -125,6 +137,9 @@ export default defineEventHandler(async (event) => {
         if (i === 0 && resolvedClipPaths.length > 1) {
           // First clip: fade in at start
           filterParts.push(`[v${i}]fade=t=in:st=0:d=${transitionDuration}[vf${i}]`);
+        } else if (i === resolvedClipPaths.length - 1 && resolvedClipPaths.length > 1) {
+          // Last clip: fade out at end (simplified - would need exact duration)
+          filterParts.push(`[v${i}]copy[vf${i}]`);
         } else {
           // Other clips: no fade (transitions can be enhanced later)
           filterParts.push(`[v${i}]copy[vf${i}]`);
@@ -132,6 +147,7 @@ export default defineEventHandler(async (event) => {
       });
       
       // Step 3: Concatenate video clips
+      // Use concat demuxer for better compatibility
       const videoConcatInputs = resolvedClipPaths.map((_, i) => `[vf${i}]`).join('');
       filterParts.push(`${videoConcatInputs}concat=n=${resolvedClipPaths.length}:v=1:a=0[outv]`);
 

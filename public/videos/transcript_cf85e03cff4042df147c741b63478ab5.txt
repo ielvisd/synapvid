@@ -1,0 +1,7 @@
+[intro] Welcome! Today, we explore Newton's First Law of Motion. We'll use a hockey puck to understand the concept of inertia.
+
+[skill1] Newton's First Law states that an object at rest stays at rest. And an object in motion stays in motion unless acted upon by a net force. This behavior is called inertia.
+
+[skill2] Let’s see how a force affects the hockey puck. When I hit the puck, it moves forward, demonstrating the change in motion. This shows how inertia works in real life.
+
+[summary] In summary, inertia keeps objects in their state of motion. Understanding this principle helps us analyze movement in sports and beyond.

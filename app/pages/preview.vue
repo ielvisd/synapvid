@@ -120,9 +120,17 @@
                       @mousedown="pauseOnSeek"
                     />
                   </div>
-          <span class="text-sm tabular-nums">
-            {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
-          </span>
+          <div class="flex items-center gap-2">
+            <span class="text-sm tabular-nums">
+              {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
+            </span>
+            <UIcon 
+              v-if="hasAudio" 
+              name="i-lucide-volume-2" 
+              class="w-4 h-4 text-green-500"
+              title="Audio available"
+            />
+          </div>
         </div>
 
         <!-- Scene Markers -->
@@ -245,6 +253,12 @@ const currentTime = ref(0);
 // Animation loop for playback
 let playbackAnimationFrame: number | null = null;
 
+// Audio playback state
+const audioSegments = computed(() => projectState.audioSegments.value || {});
+const audioElements = ref<Map<string, HTMLAudioElement>>(new Map());
+const activeAudioSegments = ref<Set<string>>(new Set());
+const hasAudio = computed(() => Object.keys(audioSegments.value).length > 0);
+
 // Get scenes from project state
 const scenes = computed(() => projectState.videoSpec.value?.scenes || []);
 const duration = computed(() => projectState.videoSpec.value?.duration_target || 120);
@@ -278,6 +292,206 @@ const currentScene = computed(() => {
   );
 });
 
+/**
+ * Initialize audio elements for all segments
+ */
+function initializeAudioElements() {
+  if (!process.client) return;
+  
+  // Clean up existing audio elements
+  audioElements.value.forEach(audio => {
+    audio.pause();
+    audio.src = '';
+  });
+  audioElements.value.clear();
+  
+  // Create audio elements for each segment
+  Object.entries(audioSegments.value).forEach(([chunkId, segment]) => {
+    // Validate segment path
+    if (!segment.path || segment.path.trim() === '') {
+      console.warn(`Skipping audio segment ${chunkId}: empty path`);
+      return;
+    }
+    
+    const audio = new Audio();
+    
+    // Set src after creating the element to avoid empty src errors
+    try {
+      audio.src = segment.path;
+      audio.preload = 'auto';
+      audio.volume = 1.0;
+      
+      // Handle audio end
+      audio.addEventListener('ended', () => {
+        activeAudioSegments.value.delete(chunkId);
+      });
+      
+      // Handle audio errors - only log after src is set
+      audio.addEventListener('error', (e) => {
+        // Wait a tick to ensure error object is populated
+        setTimeout(() => {
+          const error = audio.error;
+          if (error && error.code !== 0) {
+            // Only log meaningful errors (not just loading issues)
+            // MEDIA_ERR_ABORTED (0) and MEDIA_ERR_SRC_NOT_SUPPORTED (4) can be common
+            if (error.code === 4 && !audio.src) {
+              // Empty src - this shouldn't happen but handle gracefully
+              console.warn(`Audio ${chunkId} has empty src, path was: ${segment.path}`);
+            } else if (error.code !== 0 && error.code !== 4) {
+              console.warn(`Audio error for ${chunkId}:`, {
+                code: error.code,
+                message: error.message || 'Unknown error',
+                path: segment.path
+              });
+            }
+          }
+        }, 0);
+        activeAudioSegments.value.delete(chunkId);
+      });
+      
+      // Handle load errors more gracefully
+      audio.addEventListener('loadstart', () => {
+        // Audio started loading
+      });
+      
+      audio.addEventListener('loadeddata', () => {
+        // Audio data loaded successfully
+      });
+      
+      audioElements.value.set(chunkId, audio);
+    } catch (err) {
+      console.warn(`Failed to create audio element for ${chunkId}:`, err);
+    }
+  });
+  
+  console.log(`Initialized ${audioElements.value.size} audio segments`);
+}
+
+/**
+ * Get active audio segments at a given time
+ */
+function getActiveAudioSegments(time: number): Array<{ chunkId: string; segment: import('~/schemas/videoSpec').AudioSegment }> {
+  return Object.entries(audioSegments.value)
+    .filter(([_, segment]) => time >= segment.start && time < segment.end)
+    .map(([chunkId, segment]) => ({ chunkId, segment }));
+}
+
+/**
+ * Update audio playback based on current time
+ */
+function updateAudioPlayback(time: number) {
+  if (!process.client || !hasAudio.value) return;
+  
+  const activeSegments = getActiveAudioSegments(time);
+  const activeChunkIds = new Set(activeSegments.map(s => s.chunkId));
+  
+  // Stop segments that are no longer active
+  activeAudioSegments.value.forEach(chunkId => {
+    if (!activeChunkIds.has(chunkId)) {
+      const audio = audioElements.value.get(chunkId);
+      if (audio) {
+        try {
+          audio.pause();
+          audio.currentTime = 0;
+        } catch (err) {
+          // Ignore errors when pausing/stopping
+        }
+        activeAudioSegments.value.delete(chunkId);
+      }
+    }
+  });
+  
+  // Start/update segments that should be playing
+  activeSegments.forEach(({ chunkId, segment }) => {
+    const audio = audioElements.value.get(chunkId);
+    if (!audio) return;
+    
+    // Calculate the offset within this segment (ensure it's not negative)
+    const segmentOffset = Math.max(0, time - segment.start);
+    const segmentDuration = segment.end - segment.start;
+    
+    // Ensure offset doesn't exceed segment duration
+    const safeOffset = Math.min(segmentOffset, segmentDuration - 0.1);
+    
+    try {
+      if (!activeAudioSegments.value.has(chunkId)) {
+        // Start playing this segment
+        // Wait for audio to be ready before setting currentTime
+        if (audio.readyState >= 2) { // HAVE_CURRENT_DATA or higher
+          audio.currentTime = safeOffset;
+          audio.play().catch(err => {
+            // Only log if it's not a user-initiated play error
+            if (err.name !== 'NotAllowedError') {
+              console.warn(`Failed to play audio ${chunkId}:`, err);
+            }
+          });
+          activeAudioSegments.value.add(chunkId);
+        } else {
+          // Wait for audio to load
+          const onCanPlay = () => {
+            audio.currentTime = safeOffset;
+            audio.play().catch(() => {});
+            activeAudioSegments.value.add(chunkId);
+            audio.removeEventListener('canplay', onCanPlay);
+          };
+          audio.addEventListener('canplay', onCanPlay);
+          audio.load(); // Trigger load if not already loading
+        }
+      } else {
+        // Update playback position if needed (for seeking)
+        // Only seek if the difference is significant to avoid constant seeking
+        const expectedTime = safeOffset;
+        if (Math.abs(audio.currentTime - expectedTime) > 0.5) {
+          audio.currentTime = expectedTime;
+        }
+      }
+    } catch (err) {
+      // Ignore seek errors (e.g., when audio is not ready)
+      console.warn(`Audio seek error for ${chunkId}:`, err);
+    }
+  });
+}
+
+/**
+ * Stop all audio playback
+ */
+function stopAllAudio() {
+  audioElements.value.forEach(audio => {
+    audio.pause();
+    audio.currentTime = 0;
+  });
+  activeAudioSegments.value.clear();
+}
+
+// Initialize audio when audio segments are available
+watch(audioSegments, () => {
+  if (hasAudio.value) {
+    initializeAudioElements();
+  } else {
+    stopAllAudio();
+  }
+}, { immediate: true });
+
+// Sync audio with play/pause state
+watch(isPlaying, (playing) => {
+  if (!hasAudio.value) return;
+  
+  if (playing) {
+    // Start audio playback for current time
+    updateAudioPlayback(currentTime.value);
+  } else {
+    // Pause all audio
+    stopAllAudio();
+  }
+});
+
+// Sync audio position with timeline during playback
+watch(currentTime, (time) => {
+  if (isPlaying.value && hasAudio.value) {
+    updateAudioPlayback(time);
+  }
+});
+
 // Animation loop function
 function animatePlayback() {
   if (!isPlaying.value) return;
@@ -287,20 +501,15 @@ function animatePlayback() {
   
   // Check if we've reached the end
   if (currentTime.value >= duration.value) {
-    // Option 1: Stop at end (current behavior)
+    // Stop at end
     currentTime.value = duration.value;
     isPlaying.value = false;
+    stopAllAudio();
     if (playbackAnimationFrame) {
       cancelAnimationFrame(playbackAnimationFrame);
       playbackAnimationFrame = null;
     }
     return;
-    
-    // Option 2: Loop back to beginning (uncomment to enable)
-    // currentTime.value = 0;
-    // Continue animation
-    // playbackAnimationFrame = requestAnimationFrame(animatePlayback);
-    // return;
   }
   
   // Continue animation
@@ -349,6 +558,11 @@ function seekTo() {
   // Seek to current time in animation
   // The Scene3DViewer will automatically update via :current-time prop
   console.log('Seeking to:', currentTime.value);
+  
+  // Update audio playback for the new time
+  if (hasAudio.value) {
+    updateAudioPlayback(currentTime.value);
+  }
 }
 
 function jumpToScene(startTime: number) {
@@ -398,6 +612,13 @@ onUnmounted(() => {
     cancelAnimationFrame(playbackAnimationFrame);
     playbackAnimationFrame = null;
   }
+  stopAllAudio();
+  // Clean up audio elements
+  audioElements.value.forEach(audio => {
+    audio.pause();
+    audio.src = '';
+  });
+  audioElements.value.clear();
 });
 </script>
 

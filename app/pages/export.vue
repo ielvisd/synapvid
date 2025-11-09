@@ -31,9 +31,16 @@
           </UFormField>
         </div>
 
+        <div v-if="!canExport" class="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+          <p class="text-sm text-yellow-800 dark:text-yellow-200">
+            <UIcon name="i-lucide-alert-circle" class="inline w-4 h-4 mr-1" />
+            Please generate a video spec and audio narration before exporting.
+          </p>
+        </div>
         <UButton
           size="lg"
           icon="i-lucide-download"
+          :disabled="!canExport"
           @click="startExport"
         >
           Start Export
@@ -185,6 +192,7 @@ definePageMeta({
 // Composables
 const toast = useToast();
 const videoAssembly = useVideoAssembly();
+const projectState = useProjectState();
 
 // Export settings
 const settings = reactive({
@@ -198,22 +206,67 @@ const resolutionOptions = ['1920x1080', '1280x720', '3840x2160'];
 const fpsOptions = [24, 30, 60];
 const qualityOptions = ['low', 'medium', 'high', 'ultra'];
 
+// Get video spec and audio segments from project state
+const videoSpec = computed(() => projectState.videoSpec.value);
+const audioSegments = computed(() => projectState.audioSegments.value || {});
+
+// Check if we have the required data
+const canExport = computed(() => {
+  return videoSpec.value && 
+         Object.keys(audioSegments.value).length > 0 &&
+         videoSpec.value.scenes.length > 0;
+});
+
 // Start export process
 async function startExport() {
-  // Mock data - in real app, this would come from state management
-  const mockSpec = {
-    duration_target: 120,
-    scenes: [],
-    style: { voice: 'alloy', colors: { primary: '#F59E0B' } }
-  };
+  if (!canExport.value) {
+    toast.add({
+      title: 'Cannot Export',
+      description: 'Please generate a video spec and audio narration first.',
+      color: 'error'
+    });
+    return;
+  }
 
-  const mockAudioPaths = ['/audio/segment1.mp3'];
-  const mockClipPaths = ['/clips/scene1.mp4'];
+  // Get actual audio paths from segments
+  const audioPaths = Object.values(audioSegments.value)
+    .map(segment => segment.path)
+    .filter(path => path); // Filter out any empty paths
+
+  if (audioPaths.length === 0) {
+    toast.add({
+      title: 'No Audio Found',
+      description: 'Please generate audio narration before exporting.',
+      color: 'error'
+    });
+    return;
+  }
+
+  // For now, we need visual clips - these would be generated from the 3D scenes
+  // NOTE: The visual generation pipeline (Stage 3) that records 3D scenes to MP4 files
+  // is not yet fully implemented. Currently using test clips as placeholders.
+  // TODO: Implement visual generation that records Scene3DViewer output to MP4 files
+  const clipPaths = videoSpec.value.scenes.map((_, index) => {
+    // Use test clips as placeholders until visual generation is implemented
+    // These are simple test files and may not match your scene content
+    return `/clips/test_clip_${index % 2}.mp4`;
+  });
+  
+  // Warn user about placeholder clips
+  toast.add({
+    title: 'Using Test Clips',
+    description: 'Visual generation pipeline not yet implemented. Using placeholder clips. Video may not match your scenes.',
+    color: 'warning',
+    timeout: 5000
+  });
+
+  // Clone spec to avoid readonly issues
+  const spec = JSON.parse(JSON.stringify(videoSpec.value));
 
   const result = await videoAssembly.assembleVideo(
-    mockSpec as any,
-    mockAudioPaths,
-    mockClipPaths
+    spec,
+    audioPaths,
+    clipPaths
   );
 
   if (result) {

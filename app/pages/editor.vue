@@ -235,13 +235,51 @@
         </ClientOnly>
 
         <!-- Error Display -->
-        <UAlert
-          v-if="narrationSynthesis.error.value"
-          color="error"
-          icon="i-lucide-alert-circle"
-          :title="'Synthesis Error'"
-          :description="narrationSynthesis.error.value"
-        />
+        <div v-if="narrationSynthesis.error.value" class="space-y-2">
+          <UAlert
+            color="error"
+            icon="i-lucide-alert-circle"
+            title="Audio Generation Error"
+            :description="parsedError.userMessage"
+          />
+          
+          <div v-if="parsedError.canRetry" class="flex justify-end">
+            <UButton
+              size="xs"
+              color="error"
+              variant="soft"
+              icon="i-lucide-refresh-cw"
+              @click="synthesizeAudio"
+            >
+              Try Again
+            </UButton>
+          </div>
+          
+          <div v-if="showTechnicalDetails" class="space-y-2">
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              :trailing-icon="showTechDetails ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+              class="text-xs"
+              @click="showTechDetails = !showTechDetails"
+            >
+              {{ showTechDetails ? 'Hide' : 'Show' }} Technical Details
+            </UButton>
+            <Transition
+              enter-active-class="transition ease-out duration-200"
+              enter-from-class="opacity-0 transform -translate-y-1"
+              enter-to-class="opacity-100 transform translate-y-0"
+              leave-active-class="transition ease-in duration-150"
+              leave-from-class="opacity-100 transform translate-y-0"
+              leave-to-class="opacity-0 transform -translate-y-1"
+            >
+              <div v-if="showTechDetails" class="mt-2 p-3 bg-gray-900/50 rounded-lg border border-gray-800">
+                <code class="text-xs text-gray-400 break-all whitespace-pre-wrap">{{ parsedError.technicalDetails }}</code>
+              </div>
+            </Transition>
+          </div>
+        </div>
       </div>
 
       <!-- JSON Editor -->
@@ -299,6 +337,7 @@
 <script setup lang="ts">
 import { VideoSpecSchema, type VideoSpec } from '~/schemas/videoSpec';
 import AudioPreview from '~/components/AudioPreview.vue';
+import { parseError } from '~/utils/errorParser';
 
 // MCP Usage: Discovered UButton, UInput, UTextarea, USelect, UBadge, UFormField, UAlert, UProgress components via nuxt-ui MCP
 // MCP Usage: Using vue-app-mcp composable patterns for page state management and narration synthesis
@@ -312,11 +351,45 @@ const toast = useToast();
 const narrationSynthesis = useNarrationSynthesis();
 const projectState = useProjectState();
 
+// Parse error for user-friendly display
+const parsedError = computed(() => {
+  if (!narrationSynthesis.error.value) {
+    return {
+      userMessage: '',
+      technicalDetails: '',
+      canRetry: false
+    };
+  }
+  try {
+    return parseError(narrationSynthesis.error.value);
+  } catch (err) {
+    // Fallback if parsing fails
+    return {
+      userMessage: 'An error occurred while processing your request.',
+      technicalDetails: narrationSynthesis.error.value || 'Unknown error',
+      canRetry: true
+    };
+  }
+});
+
+// Check if technical details should be shown
+const showTechnicalDetails = computed(() => {
+  return parsedError.value.technicalDetails && 
+         parsedError.value.technicalDetails !== parsedError.value.userMessage &&
+         parsedError.value.technicalDetails.trim().length > 0;
+});
+
 // State
 const viewMode = ref<'visual' | 'narration' | 'json'>('visual');
 const hasChanges = ref(false);
 const validationErrors = ref<string[]>([]);
 const jsonError = ref<string | null>(null);
+const showTechDetails = ref(false);
+
+// Reset tech details visibility when error changes
+watch(() => narrationSynthesis.error.value, () => {
+  showTechDetails.value = false;
+});
 
 // Get spec from project state or create default
 // Clone to avoid readonly issues

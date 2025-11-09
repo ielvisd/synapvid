@@ -1,0 +1,29 @@
+{
+  "scenes": [
+    {
+      "id": "scene_0",
+      "type": "intro",
+      "start": 0,
+      "end": 15
+    },
+    {
+      "id": "scene_1",
+      "type": "skill1",
+      "start": 15,
+      "end": 60
+    },
+    {
+      "id": "scene_2",
+      "type": "skill2",
+      "start": 60,
+      "end": 105
+    },
+    {
+      "id": "scene_3",
+      "type": "summary",
+      "start": 105,
+      "end": 120
+    }
+  ],
+  "duration": 120
+}
