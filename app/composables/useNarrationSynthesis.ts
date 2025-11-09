@@ -11,8 +11,20 @@ import type { VideoSpec, AudioSegment } from '~/schemas/videoSpec';
 export const useNarrationSynthesis = () => {
   const isLoading = ref(false);
   const error = ref<string | null>(null);
-  const audioSegments = ref<Record<string, AudioSegment>>({});
   const progress = ref(0);
+  
+  // Initialize from project state if available
+  const projectState = useProjectState();
+  const audioSegments = ref<Record<string, AudioSegment>>(
+    projectState.audioSegments.value || {}
+  );
+
+  // Watch for changes in project state and sync
+  watch(() => projectState.audioSegments.value, (newSegments) => {
+    if (newSegments && Object.keys(newSegments).length > 0) {
+      audioSegments.value = newSegments;
+    }
+  });
 
   /**
    * Synthesize narration for all chunks in the spec

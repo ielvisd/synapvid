@@ -1,13 +1,14 @@
-import { writeFile, mkdir } from 'fs/promises';
+import { writeFile, mkdir, access } from 'fs/promises';
 import { join } from 'path';
 import { createHash } from 'crypto';
+import { getAudioDuration } from '../../utils/ffprobe';
 
 /**
  * API Endpoint: Text-to-Speech using OpenAI TTS
  * POST /api/openai/tts
  * 
  * Converts text to speech using OpenAI's TTS API
- * Returns path to generated audio file and duration
+ * Returns path to generated audio file and accurate duration via ffprobe
  */
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
@@ -39,45 +40,57 @@ export default defineEventHandler(async (event) => {
     // Ensure audio directory exists
     await mkdir(audioDir, { recursive: true });
 
-    // Call OpenAI TTS API
-    const response = await fetch('https://api.openai.com/v1/audio/speech', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.openaiApiKey}`
-      },
-      body: JSON.stringify({
-        model: 'tts-1',
-        input: text,
-        voice: voice,
-        speed: speed,
-        response_format: 'mp3'
-      })
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(`OpenAI TTS API error: ${response.status} - ${JSON.stringify(errorData)}`);
+    // Check if audio file already exists (cache)
+    let fileExists = false;
+    try {
+      await access(filepath);
+      fileExists = true;
+      console.log(`Using cached audio: ${filename}`);
+    } catch {
+      // File doesn't exist, need to generate
     }
 
-    // Get audio buffer
-    const audioBuffer = await response.arrayBuffer();
+    // Generate audio if not cached
+    if (!fileExists) {
+      // Call OpenAI TTS API
+      const response = await fetch('https://api.openai.com/v1/audio/speech', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.openaiApiKey}`
+        },
+        body: JSON.stringify({
+          model: 'tts-1',
+          input: text,
+          voice: voice,
+          speed: speed,
+          response_format: 'mp3'
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`OpenAI TTS API error: ${response.status} - ${JSON.stringify(errorData)}`);
+      }
+
+      // Get audio buffer
+      const audioBuffer = await response.arrayBuffer();
+      
+      // Save to file
+      await writeFile(filepath, Buffer.from(audioBuffer));
+      console.log(`Generated new audio: ${filename}`);
+    }
+
+    // Get accurate duration using ffprobe
+    const duration = await getAudioDuration(filepath);
     
-    // Save to file
-    await writeFile(filepath, Buffer.from(audioBuffer));
-
-    // Calculate duration (approximate based on text length and speed)
-    // For more accurate duration, we'd need to use ffprobe or similar
-    // Average speaking rate: ~150 words per minute
-    const wordCount = text.split(/\s+/).length;
-    const estimatedDuration = (wordCount / 150) * 60 / speed;
-
-    console.log(`Generated audio: ${filename} (estimated ${estimatedDuration.toFixed(2)}s)`);
+    console.log(`Audio ready: ${filename} (${duration.toFixed(2)}s)`);
 
     return {
       path: `/audio/${filename}`,
-      duration: Math.max(1.0, estimatedDuration), // Minimum 1 second
-      filename
+      duration,
+      filename,
+      text // Return text for reference
     };
   } catch (error: any) {
     console.error('TTS generation error:', error);

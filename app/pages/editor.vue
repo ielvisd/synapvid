@@ -27,21 +27,39 @@
         </div>
       </div>
 
-      <!-- Editor View Toggle -->
-      <div class="flex gap-2">
+      <!-- Workflow Steps -->
+      <div class="flex items-center gap-2 overflow-x-auto pb-2">
         <UButton
           :variant="viewMode === 'visual' ? 'solid' : 'outline'"
           size="sm"
           @click="viewMode = 'visual'"
         >
-          Visual Editor
+          <template #leading>
+            <UIcon name="i-lucide-edit" />
+          </template>
+          1. Edit Spec
         </UButton>
+        <UIcon name="i-lucide-chevron-right" class="text-gray-400" />
+        <UButton
+          :variant="viewMode === 'narration' ? 'solid' : 'outline'"
+          size="sm"
+          @click="viewMode = 'narration'"
+        >
+          <template #leading>
+            <UIcon name="i-lucide-mic" />
+          </template>
+          2. Generate Audio
+        </UButton>
+        <UIcon name="i-lucide-chevron-right" class="text-gray-400" />
         <UButton
           :variant="viewMode === 'json' ? 'solid' : 'outline'"
           size="sm"
           @click="viewMode = 'json'"
         >
-          JSON Editor
+          <template #leading>
+            <UIcon name="i-lucide-code" />
+          </template>
+          3. Review JSON
         </UButton>
       </div>
 
@@ -150,6 +168,76 @@
         </div>
       </div>
 
+      <!-- Narration Synthesis View -->
+      <div v-else-if="viewMode === 'narration'" class="space-y-6">
+        <UAlert
+          icon="i-lucide-info"
+          color="info"
+          title="Narration Synthesis"
+          description="Generate AI voice narration for your video specification. This will create audio files for each narration chunk."
+        />
+
+        <!-- Narration Stats -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div class="text-sm text-gray-600 dark:text-gray-400">Total Chunks</div>
+            <div class="text-2xl font-bold">{{ totalNarrationChunks }}</div>
+          </div>
+          <div class="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div class="text-sm text-gray-600 dark:text-gray-400">Voice</div>
+            <div class="text-2xl font-bold capitalize">{{ spec.style.voice }}</div>
+          </div>
+          <div class="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div class="text-sm text-gray-600 dark:text-gray-400">Progress</div>
+            <div class="text-2xl font-bold">{{ narrationSynthesis.progress.value }}%</div>
+          </div>
+        </div>
+
+        <!-- Synthesis Controls -->
+        <div class="flex gap-3">
+          <UButton
+            icon="i-lucide-mic"
+            :loading="narrationSynthesis.isLoading.value"
+            :disabled="narrationSynthesis.isLoading.value"
+            @click="synthesizeAudio"
+          >
+            {{ Object.keys(narrationSynthesis.audioSegments.value).length > 0 ? 'Regenerate' : 'Generate' }} Narration
+          </UButton>
+          <UButton
+            v-if="Object.keys(narrationSynthesis.audioSegments.value).length > 0"
+            variant="outline"
+            icon="i-lucide-file-json"
+            @click="downloadAudioSegments"
+          >
+            Export Metadata (JSON)
+          </UButton>
+        </div>
+
+        <!-- Progress Bar -->
+        <UProgress
+          v-if="narrationSynthesis.isLoading.value"
+          :value="narrationSynthesis.progress.value"
+          :max="100"
+          animation="carousel"
+          color="primary"
+        />
+
+        <!-- Audio Preview -->
+        <AudioPreview
+          v-if="Object.keys(narrationSynthesis.audioSegments.value).length > 0"
+          :segments="narrationSynthesis.audioSegments.value"
+        />
+
+        <!-- Error Display -->
+        <UAlert
+          v-if="narrationSynthesis.error.value"
+          color="error"
+          icon="i-lucide-alert-circle"
+          :title="'Synthesis Error'"
+          :description="narrationSynthesis.error.value"
+        />
+      </div>
+
       <!-- JSON Editor -->
       <div v-else class="space-y-4">
         <UAlert
@@ -204,9 +292,10 @@
 
 <script setup lang="ts">
 import { VideoSpecSchema, type VideoSpec } from '~/schemas/videoSpec';
+import AudioPreview from '~/components/AudioPreview.vue';
 
-// MCP Usage: Discovered UButton, UInput, UTextarea, USelect, UBadge, UFormField, UAlert components via nuxt-ui MCP
-// MCP Usage: Using vue-app-mcp composable patterns for page state management
+// MCP Usage: Discovered UButton, UInput, UTextarea, USelect, UBadge, UFormField, UAlert, UProgress components via nuxt-ui MCP
+// MCP Usage: Using vue-app-mcp composable patterns for page state management and narration synthesis
 
 definePageMeta({
   layout: 'default'
@@ -214,33 +303,45 @@ definePageMeta({
 
 // Composables
 const toast = useToast();
+const narrationSynthesis = useNarrationSynthesis();
+const projectState = useProjectState();
 
 // State
-const viewMode = ref<'visual' | 'json'>('visual');
+const viewMode = ref<'visual' | 'narration' | 'json'>('visual');
 const hasChanges = ref(false);
 const validationErrors = ref<string[]>([]);
 const jsonError = ref<string | null>(null);
 
-// Mock spec data (in real app, this would come from state management)
-const spec = reactive<VideoSpec>({
-  duration_target: 120,
-  scenes: [
-    {
-      type: 'intro',
-      start: 0,
-      end: 15,
-      narration: ['Welcome to our physics demonstration'],
-      events: []
-    }
-  ],
-  style: {
-    voice: 'alloy',
-    colors: {
-      primary: '#F59E0B'
-    },
-    transitions: 0.3
-  }
-});
+// Get spec from project state or create default
+// Clone to avoid readonly issues
+const initialSpec: VideoSpec = projectState.videoSpec.value 
+  ? JSON.parse(JSON.stringify(projectState.videoSpec.value))
+  : {
+      duration_target: 120,
+      scenes: [
+        {
+          type: 'intro',
+          start: 0,
+          end: 15,
+          narration: ['Welcome to our physics demonstration'],
+          events: []
+        }
+      ],
+      style: {
+        voice: 'alloy',
+        colors: {
+          primary: '#F59E0B'
+        },
+        transitions: 0.3
+      }
+    };
+
+const spec = reactive<VideoSpec>(initialSpec);
+
+// Watch for changes and auto-save
+watch(spec, () => {
+  hasChanges.value = true;
+}, { deep: true });
 
 // Options
 const voiceOptions = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
@@ -365,13 +466,85 @@ function applyJSON() {
   }
 }
 
+// Narration synthesis functions
+const totalNarrationChunks = computed(() => {
+  return spec.scenes.reduce((sum, scene) => sum + scene.narration.length, 0);
+});
+
+function getChunkText(chunkId: string): string {
+  // Parse chunkId like "scene0_chunk0" to get scene and chunk indices
+  const match = chunkId.match(/scene(\d+)_chunk(\d+)/);
+  if (!match || !match[1] || !match[2]) return '';
+  
+  const sceneIndex = parseInt(match[1]);
+  const chunkIndex = parseInt(match[2]);
+  
+  const scene = spec.scenes[sceneIndex];
+  if (!scene) return '';
+  
+  return scene.narration[chunkIndex] || '';
+}
+
+async function synthesizeAudio() {
+  const result = await narrationSynthesis.synthesizeNarration(spec);
+  
+  if (result) {
+    // Save audio segments to project state
+    projectState.updateAudioSegments(result);
+    
+    toast.add({
+      title: 'Success!',
+      description: `Generated ${Object.keys(result).length} audio segments`,
+      icon: 'i-lucide-check-circle',
+      color: 'success'
+    });
+    
+    // Update spec with audio segments
+    const updatedSpec = narrationSynthesis.updateSpecWithTimestamps(spec, result);
+    Object.assign(spec, updatedSpec);
+    projectState.updateVideoSpec(spec);
+    hasChanges.value = false;
+  } else {
+    toast.add({
+      title: 'Synthesis Failed',
+      description: narrationSynthesis.error.value || 'Failed to generate narration',
+      icon: 'i-lucide-alert-circle',
+      color: 'error'
+    });
+  }
+}
+
+function downloadAudioSegments() {
+  // Create a JSON file with all audio segment paths
+  const segments = narrationSynthesis.audioSegments.value;
+  const blob = new Blob([JSON.stringify(segments, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'audio-segments.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  toast.add({
+    title: 'Downloaded!',
+    description: 'Audio segments metadata downloaded',
+    color: 'success'
+  });
+}
+
 // Save changes
 function saveChanges() {
   if (validateSpec()) {
+    // Save to project state
+    projectState.updateVideoSpec(spec);
+    
     toast.add({
       title: 'Changes Saved',
       description: 'Your specification has been saved',
-      color: 'success'
+      color: 'success',
+      icon: 'i-lucide-check'
     });
     hasChanges.value = false;
   } else {

@@ -6,6 +6,11 @@
 .cache
 dist
 
+# Generated audio and video files
+public/audio/*.mp3
+public/videos/*.mp4
+public/final_videos/*.mp4
+
 # Node dependencies
 node_modules
 

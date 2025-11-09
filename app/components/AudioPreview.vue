@@ -13,10 +13,23 @@
           icon="i-lucide-download"
           @click="downloadAll"
         >
-          Download All
+          Download All MP3s
         </UButton>
+        <span v-if="segments && Object.keys(segments).length > 1" class="text-xs text-gray-500">
+          ({{ Object.keys(segments).length }} files)
+        </span>
       </div>
     </div>
+
+    <!-- Download Info Alert -->
+    <UAlert
+      v-if="segments && Object.keys(segments).length > 3"
+      color="info"
+      variant="soft"
+      icon="i-lucide-info"
+      title="Bulk Download Tip"
+      description="Some browsers may block multiple downloads. If files appear incomplete, try downloading them individually using each segment's download button."
+    />
 
     <!-- Sync Validation Errors -->
     <UAlert
@@ -193,16 +206,46 @@ function downloadSegment(path: string, id: string) {
   document.body.removeChild(a);
 }
 
-// Download all segments (would need to be zipped)
-function downloadAll() {
-  // For now, just download the first segment as an example
-  // In a real implementation, we'd zip all files or create a playlist
-  if (props.segments) {
-    const firstSegment = Object.values(props.segments)[0];
-    if (firstSegment) {
-      downloadSegment(firstSegment.path, 'all_audio');
+// Download all segments
+async function downloadAll() {
+  if (!props.segments) return;
+  
+  const toast = useToast();
+  const entries = Object.entries(props.segments);
+  
+  toast.add({
+    title: 'Downloading Audio Files',
+    description: `Starting download of ${entries.length} files...`,
+    icon: 'i-lucide-download',
+    color: 'info'
+  });
+  
+  // Download each segment sequentially with delay to avoid browser blocking
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    if (!entry) continue;
+    
+    const [id, segment] = entry;
+    
+    // Wait between downloads to avoid browser blocking
+    if (i > 0) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    try {
+      downloadSegment(segment.path, id);
+      console.log(`Downloaded: ${id}`);
+    } catch (err) {
+      console.error(`Failed to download ${id}:`, err);
     }
   }
+  
+  toast.add({
+    title: 'Downloads Complete',
+    description: `${entries.length} audio files downloaded`,
+    icon: 'i-lucide-check',
+    color: 'success'
+  });
 }
 
 // Cleanup audio on unmount

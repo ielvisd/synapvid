@@ -2,11 +2,21 @@
   <div>
     <div class="space-y-8">
       <!-- Header -->
-      <div>
-        <h1 class="text-4xl font-bold">Generate Educational Video</h1>
-        <p class="text-gray-600 dark:text-gray-400 mt-2">
-          Enter a prompt to generate a structured video specification for physics education
-        </p>
+      <div class="flex items-start justify-between">
+        <div>
+          <h1 class="text-4xl font-bold">Generate Educational Video</h1>
+          <p class="text-gray-600 dark:text-gray-400 mt-2">
+            Enter a prompt to generate a structured video specification for physics education
+          </p>
+        </div>
+        <UButton
+          v-if="generatedSpec"
+          variant="outline"
+          icon="i-lucide-plus"
+          @click="startNewProject"
+        >
+          New Project
+        </UButton>
       </div>
 
       <!-- Prompt Form -->
@@ -124,8 +134,18 @@
         <!-- Next Steps -->
         <div class="flex gap-3">
           <UButton
+            icon="i-lucide-volume-2"
+            color="primary"
+            :loading="narrationSynthesis.isLoading.value"
+            :disabled="narrationSynthesis.isLoading.value"
+            @click="synthesizeNarration"
+          >
+            {{ narrationSynthesis.audioSegments.value && Object.keys(narrationSynthesis.audioSegments.value).length > 0 ? 'Regenerate' : 'Generate' }} Narration
+          </UButton>
+          <UButton
             to="/editor"
             icon="i-lucide-edit"
+            variant="outline"
           >
             Edit Specification
           </UButton>
@@ -137,6 +157,12 @@
             Preview 3D Scenes
           </UButton>
         </div>
+
+        <!-- Audio Preview -->
+        <AudioPreview 
+          v-if="narrationSynthesis.audioSegments.value && Object.keys(narrationSynthesis.audioSegments.value).length > 0"
+          :segments="narrationSynthesis.audioSegments.value"
+        />
       </div>
     </div>
   </div>
@@ -146,7 +172,7 @@
 import { PromptInputSchema, type PromptInput, type VideoSpec } from '~/schemas/videoSpec';
 import type { FormSubmitEvent } from '@nuxt/ui';
 
-// MCP Usage: Discovered UForm, UInput, UTextarea, UButton, Toast components via nuxt-ui MCP
+// MCP Usage: Discovered UForm, UInput, UTextarea, UButton, Toast, AudioPreview components via nuxt-ui MCP
 // MCP Usage: Using vue-app-mcp composable patterns for state management and useToast for notifications
 
 definePageMeta({
@@ -156,6 +182,8 @@ definePageMeta({
 // Composables
 const toast = useToast();
 const promptExpansion = usePromptExpansion();
+const narrationSynthesis = useNarrationSynthesis();
+const projectState = useProjectState();
 
 // Form state
 const formState = reactive<Partial<PromptInput>>({
@@ -179,8 +207,8 @@ const examplesText = computed({
   }
 });
 
-// Generated spec
-const generatedSpec = computed(() => promptExpansion.generatedSpec.value);
+// Generated spec - use project state if available, otherwise use promptExpansion
+const generatedSpec = computed(() => projectState.videoSpec.value || promptExpansion.generatedSpec.value);
 
 // Form submission
 async function onSubmit(event: FormSubmitEvent<PromptInput>) {
@@ -189,6 +217,9 @@ async function onSubmit(event: FormSubmitEvent<PromptInput>) {
   const result = await promptExpansion.expandPrompt(event.data);
   
   if (result) {
+    // Save to project state
+    projectState.updateVideoSpec(result);
+    
     toast.add({
       title: 'Success!',
       description: 'Video specification generated successfully',
@@ -252,6 +283,55 @@ function downloadSpec() {
     description: 'Specification downloaded as video-spec.json',
     color: 'success'
   });
+}
+
+// Start new project
+function startNewProject() {
+  if (confirm('Are you sure you want to start a new project? Any unsaved changes will be lost.')) {
+    projectState.clearProject();
+    promptExpansion.reset();
+    narrationSynthesis.reset();
+    
+    // Clear form
+    formState.prompt = '';
+    formState.learningObjectives = [];
+    formState.examples = [];
+    
+    toast.add({
+      title: 'New Project',
+      description: 'Started a new project',
+      icon: 'i-lucide-plus',
+      color: 'info'
+    });
+  }
+}
+
+// Synthesize narration from generated spec
+async function synthesizeNarration() {
+  if (!generatedSpec.value) return;
+  
+  console.log('Starting narration synthesis...');
+  
+  // Clone the spec to avoid readonly issues
+  const specClone = JSON.parse(JSON.stringify(generatedSpec.value)) as VideoSpec;
+  const result = await narrationSynthesis.synthesizeNarration(specClone);
+  
+  if (result) {
+    const segmentCount = Object.keys(result).length;
+    toast.add({
+      title: 'Success!',
+      description: `Generated ${segmentCount} audio segments`,
+      icon: 'i-lucide-check-circle',
+      color: 'success'
+    });
+  } else {
+    toast.add({
+      title: 'Narration Failed',
+      description: narrationSynthesis.error.value || 'Failed to synthesize narration',
+      icon: 'i-lucide-alert-circle',
+      color: 'error'
+    });
+  }
 }
 </script>
 
