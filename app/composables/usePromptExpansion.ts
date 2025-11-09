@@ -97,7 +97,25 @@ Output valid JSON matching this schema:
       return validatedSpec;
     } catch (err: any) {
       console.error('Prompt expansion error:', err);
-      error.value = err.message || 'Failed to expand prompt';
+      
+      // Parse error to provide user-friendly messages
+      let userMessage = 'Failed to generate video specification';
+      
+      if (err.message?.includes('OpenAI API key not configured')) {
+        userMessage = 'OpenAI API key is missing. Please add your API key to the .env file and restart the server.';
+      } else if (err.message?.includes('500 Server Error')) {
+        userMessage = 'Server error occurred. This might be due to a missing API key or OpenAI service issue.';
+      } else if (err.message?.includes('Failed after')) {
+        userMessage = 'Unable to connect to OpenAI after multiple attempts. Please check your internet connection and API key.';
+      } else if (err.message?.includes('401')) {
+        userMessage = 'Invalid OpenAI API key. Please check your API key in the .env file.';
+      } else if (err.data?.message) {
+        userMessage = err.data.message;
+      } else if (err.message) {
+        userMessage = err.message;
+      }
+      
+      error.value = userMessage;
       return null;
     } finally {
       isLoading.value = false;

@@ -76,17 +76,6 @@
         </div>
       </UForm>
 
-      <!-- Error Alert -->
-      <UAlert
-        v-if="promptExpansion.error.value"
-        color="error"
-        variant="soft"
-        :title="'Generation Error'"
-        :description="promptExpansion.error.value"
-        :close-button="{ icon: 'i-lucide-x' }"
-        @close="promptExpansion.reset()"
-      />
-
       <!-- Generated Spec Display -->
       <div v-if="generatedSpec" class="space-y-4">
         <div class="flex items-center justify-between">
@@ -157,8 +146,8 @@
 import { PromptInputSchema, type PromptInput, type VideoSpec } from '~/schemas/videoSpec';
 import type { FormSubmitEvent } from '@nuxt/ui';
 
-// MCP Usage: Discovered UForm, UInput, UTextarea, UButton, UAlert components via nuxt-ui MCP
-// MCP Usage: Using vue-app-mcp composable patterns for state management
+// MCP Usage: Discovered UForm, UInput, UTextarea, UButton, Toast components via nuxt-ui MCP
+// MCP Usage: Using vue-app-mcp composable patterns for state management and useToast for notifications
 
 definePageMeta({
   layout: 'default'
@@ -201,15 +190,25 @@ async function onSubmit(event: FormSubmitEvent<PromptInput>) {
   
   if (result) {
     toast.add({
-      title: 'Success',
-      description: 'Video specification generated successfully!',
+      title: 'Success!',
+      description: 'Video specification generated successfully',
+      icon: 'i-lucide-check-circle',
       color: 'success'
     });
   } else {
+    // Show error toast with retry action
     toast.add({
-      title: 'Error',
+      title: 'Generation Failed',
       description: promptExpansion.error.value || 'Failed to generate specification',
-      color: 'error'
+      icon: 'i-lucide-alert-circle',
+      color: 'error',
+      actions: [{
+        label: 'Retry',
+        icon: 'i-lucide-refresh-cw',
+        color: 'error',
+        variant: 'outline',
+        onClick: () => onSubmit(event)
+      }]
     });
   }
 }
