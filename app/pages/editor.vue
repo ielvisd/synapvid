@@ -201,16 +201,20 @@
             :disabled="narrationSynthesis.isLoading.value"
             @click="synthesizeAudio"
           >
-            {{ Object.keys(narrationSynthesis.audioSegments.value).length > 0 ? 'Regenerate' : 'Generate' }} Narration
+            <ClientOnly fallback="Generate Narration">
+              {{ Object.keys(narrationSynthesis.audioSegments.value).length > 0 ? 'Regenerate' : 'Generate' }} Narration
+            </ClientOnly>
           </UButton>
-          <UButton
-            v-if="Object.keys(narrationSynthesis.audioSegments.value).length > 0"
-            variant="outline"
-            icon="i-lucide-file-json"
-            @click="downloadAudioSegments"
-          >
-            Export Metadata (JSON)
-          </UButton>
+          <ClientOnly>
+            <UButton
+              v-if="Object.keys(narrationSynthesis.audioSegments.value).length > 0"
+              variant="outline"
+              icon="i-lucide-file-json"
+              @click="downloadAudioSegments"
+            >
+              Export Metadata (JSON)
+            </UButton>
+          </ClientOnly>
         </div>
 
         <!-- Progress Bar -->
@@ -223,10 +227,12 @@
         />
 
         <!-- Audio Preview -->
-        <AudioPreview
-          v-if="Object.keys(narrationSynthesis.audioSegments.value).length > 0"
-          :segments="narrationSynthesis.audioSegments.value"
-        />
+        <ClientOnly>
+          <AudioPreview
+            v-if="Object.keys(narrationSynthesis.audioSegments.value).length > 0"
+            :segments="narrationSynthesis.audioSegments.value"
+          />
+        </ClientOnly>
 
         <!-- Error Display -->
         <UAlert

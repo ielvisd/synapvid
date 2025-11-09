@@ -9,14 +9,16 @@
             Enter a prompt to generate a structured video specification for physics education
           </p>
         </div>
-        <UButton
-          v-if="generatedSpec"
-          variant="outline"
-          icon="i-lucide-plus"
-          @click="startNewProject"
-        >
-          New Project
-        </UButton>
+        <ClientOnly>
+          <UButton
+            v-if="generatedSpec"
+            variant="outline"
+            icon="i-lucide-plus"
+            @click="startNewProject"
+          >
+            New Project
+          </UButton>
+        </ClientOnly>
       </div>
 
       <!-- Prompt Form -->
@@ -76,18 +78,21 @@
           >
             Generate Video Spec
           </UButton>
-          <UButton 
-            v-if="generatedSpec"
-            variant="outline"
-            @click="navigateTo('/editor')"
-          >
-            Edit in Editor
-          </UButton>
+          <ClientOnly>
+            <UButton 
+              v-if="generatedSpec"
+              variant="outline"
+              @click="navigateTo('/editor')"
+            >
+              Edit in Editor
+            </UButton>
+          </ClientOnly>
         </div>
       </UForm>
 
       <!-- Generated Spec Display -->
-      <div v-if="generatedSpec" class="space-y-4">
+      <ClientOnly>
+        <div v-if="generatedSpec" class="space-y-4">
         <div class="flex items-center justify-between">
           <h2 class="text-2xl font-bold">Generated Video Specification</h2>
           <div class="flex gap-2">
@@ -164,6 +169,7 @@
           :segments="narrationSynthesis.audioSegments.value"
         />
       </div>
+      </ClientOnly>
     </div>
   </div>
 </template>
